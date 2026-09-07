@@ -1,157 +1,345 @@
-import { useCallback, useEffect, useState, useRef } from "react";
+import {
+  IconAdjustmentsHorizontal,
+  IconArrowUp,
+  IconClipboard,
+  IconCornerDownLeft,
+  IconLayoutSidebar,
+  IconPlayerStop,
+} from "@tabler/icons-react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { validateInputText } from "../../shared/protocol";
+import { Drawer } from "./components/Drawer";
 import { Terminal } from "./components/Terminal";
-import { Header } from "./components/Header";
-import { Drawer, SIDEBAR_WIDTH, DESKTOP_BREAKPOINT } from "./components/Drawer";
-import { StatusBar } from "./components/StatusBar";
 import { useCmux } from "./hooks/useCmux";
-import { useGesture } from "./hooks/useGesture";
-
-const POLL_INTERVAL = 1000;
 
 export function App() {
-  const {
-    status,
-    workspaces,
-    currentWorkspace,
-    panes,
-    currentPane,
-    notifications,
-    listWorkspaces,
-    selectWorkspace,
-    listPanes,
-    readText,
-    listNotifications,
-    navigateWorkspace,
-    navigatePane,
-  } = useCmux();
-
+  const remote = useCmux();
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [termContent, setTermContent] = useState("");
-  const pollRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
-
-  // Initial data fetch
-  useEffect(() => {
-    if (status !== "connected") return;
-
-    listWorkspaces()
-      .then(() => Promise.all([listPanes(), listNotifications()]))
-      .catch((err) => console.error("[app] Init error:", err));
-  }, [status, listWorkspaces, listPanes]);
-
-  // Re-fetch panes when workspace changes
-  useEffect(() => {
-    if (status !== "connected" || !currentWorkspace) return;
-    listPanes(currentWorkspace).catch(() => {});
-  }, [status, currentWorkspace, listPanes]);
-
-  // Poll terminal content using workspace_ref
-  useEffect(() => {
-    if (status !== "connected" || !currentWorkspace) {
-      if (pollRef.current) clearInterval(pollRef.current);
+  const [controlsOpen, setControlsOpen] = useState(false);
+  const closeDrawer = useCallback(() => setDrawerOpen(false), []);
+  const closeControls = useCallback(() => setControlsOpen(false), []);
+  const openDrawer = () => {
+    setControlsOpen(false);
+    if (window.innerWidth >= 768) {
+      document.querySelector<HTMLInputElement>(".session-search input")?.focus();
       return;
     }
-
-    const poll = async () => {
-      try {
-        const text = await readText(currentWorkspace);
-        setTermContent(text);
-      } catch (err) {
-        console.error("[app] Poll error:", err);
-      }
-    };
-
-    poll();
-    pollRef.current = setInterval(poll, POLL_INTERVAL);
-
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-    };
-  }, [status, currentWorkspace, readText]);
-
-  // Gesture handlers
-  const onSwipeUp = useCallback(() => {
-    navigateWorkspace("next");
-  }, [navigateWorkspace]);
-
-  const onSwipeDown = useCallback(() => {
-    navigateWorkspace("prev");
-  }, [navigateWorkspace]);
-
-  const onSwipeLeft = useCallback(() => {
-    navigatePane("next");
-  }, [navigatePane]);
-
-  const onSwipeRight = useCallback(() => {
-    navigatePane("prev");
-  }, [navigatePane]);
-
-  const gestureRef = useGesture({
-    onSwipeUp,
-    onSwipeDown,
-    onSwipeLeft,
-    onSwipeRight,
-  });
-
-  const [isDesktop, setIsDesktop] = useState(
-    typeof window !== "undefined" && window.innerWidth >= DESKTOP_BREAKPOINT
-  );
-
+    setDrawerOpen(true);
+  };
+  const [viewportHeight, setViewportHeight] = useState(window.visualViewport?.height);
+  const [viewportTop, setViewportTop] = useState(window.visualViewport?.offsetTop ?? 0);
   useEffect(() => {
-    const mq = window.matchMedia(`(min-width: ${DESKTOP_BREAKPOINT}px)`);
-    const handler = (e: MediaQueryListEvent) => setIsDesktop(e.matches);
-    mq.addEventListener("change", handler);
-    return () => mq.removeEventListener("change", handler);
+    const viewport = window.visualViewport;
+    if (!viewport) return;
+    const resize = () => {
+      setViewportHeight(viewport.height);
+      setViewportTop(viewport.offsetTop || 0);
+    };
+    viewport.addEventListener("resize", resize);
+    viewport.addEventListener("scroll", resize);
+    return () => {
+      viewport.removeEventListener("resize", resize);
+      viewport.removeEventListener("scroll", resize);
+    };
   }, []);
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [feedback, setFeedback] = useState<{ target: string; text: string } | null>(null);
+  const [followRequest, setFollowRequest] = useState(0);
+  const currentTarget = useRef(remote.targetKey);
+  currentTarget.current = remote.targetKey;
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const draft = drafts[remote.targetKey] ?? "";
+  const draftError = draft ? validateInputText(draft) : null;
+  const workspace = remote.workspaces.find((item) => item.id === remote.currentWorkspace);
+  const terminals = remote.surfaces.filter((item) => item.type === "terminal");
+  const canSend = remote.canInput && !!draft && !draftError;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Draft and target changes alter textarea geometry and require a new DOM measurement.
+  useLayoutEffect(() => {
+    const input = inputRef.current;
+    if (!input) return;
+    input.style.height = "0px";
+    input.style.height = `${Math.max(44, Math.min(input.scrollHeight, 144))}px`;
+  }, [draft, remote.targetKey]);
+  useEffect(() => {
+    if (!feedback) return;
+    const timer = setTimeout(() => setFeedback(null), 2500);
+    return () => clearTimeout(timer);
+  }, [feedback]);
 
-  const currentWs = workspaces.find((w) => w.ref === currentWorkspace);
-  const currentPaneInfo = panes.find((p) => p.selected_surface_ref === currentPane);
-
+  const sendDraft = async (submit: boolean) => {
+    if (!canSend) return;
+    const target = remote.targetKey;
+    const text = draft;
+    const confirmed = await (submit ? remote.submitText(text) : remote.sendText(text));
+    if (confirmed) {
+      setDrafts((previous) =>
+        previous[target] === text ? { ...previous, [target]: "" } : previous,
+      );
+      setFeedback({ target, text: submit ? "Sent" : "Text inserted" });
+      if (target === currentTarget.current) setFollowRequest((value) => value + 1);
+    }
+  };
+  const sendTerminalKey = (key: "enter" | "ctrl+c") => {
+    if (!remote.canInput) return;
+    setFollowRequest((value) => value + 1);
+    void remote.sendKey(key);
+  };
+  const selectingSession =
+    remote.loaded &&
+    !remote.currentWorkspace &&
+    (!remote.readError || remote.readError.code === "invalid_request");
+  const selectingTerminal =
+    remote.loaded &&
+    remote.surfacesLoaded &&
+    !!remote.currentWorkspace &&
+    !remote.currentSurface &&
+    remote.readError?.code === "invalid_request";
+  let stateMessage: string | null = null;
+  if (remote.readError?.code === "unsupported_version") stateMessage = remote.readError.message;
+  else if (remote.status !== "connected")
+    stateMessage = "Disconnected from your Mac. Your draft stays here.";
+  else if (remote.readError) stateMessage = remote.readError.message;
+  else if (!remote.loaded) stateMessage = "Loading sessions…";
+  else if (remote.workspaces.length === 0) stateMessage = "Open a cmux session on your Mac.";
+  else if (!remote.currentWorkspace) stateMessage = "Choose a session.";
+  else if (!remote.surfacesLoaded) stateMessage = "Loading terminals…";
+  else if (!remote.currentSurface && terminals.length === 0)
+    stateMessage = "This session has no terminals.";
+  else if (!remote.currentSurface) stateMessage = "Choose a terminal.";
+  else if (!remote.fresh) stateMessage = "Refreshing output. Input will be available shortly.";
+  const connection =
+    remote.status !== "connected" ? "Disconnected" : remote.fresh ? "Connected" : "Refreshing";
   return (
     <div
-      style={{
-        display: "flex",
-        height: "100dvh",
-        backgroundColor: "#1a1a2e",
-        color: "#e0e0e0",
-        overflow: "hidden",
-      }}
+      className={`app-shell ${viewportHeight !== undefined && viewportHeight < 540 ? "is-compact" : ""}`}
+      style={{ height: viewportHeight, top: viewportTop }}
     >
       <Drawer
         open={drawerOpen}
-        workspaces={workspaces}
-        currentWorkspace={currentWorkspace}
-        notifications={notifications}
-        onSelect={(ref) => {
-          selectWorkspace(ref);
-        }}
-        onClose={() => setDrawerOpen(false)}
+        workspaces={remote.workspaces}
+        currentWorkspace={remote.currentWorkspace}
+        onSelect={remote.selectWorkspace}
+        onClose={closeDrawer}
+        loaded={remote.loaded}
       />
-
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          flex: 1,
-          marginLeft: isDesktop ? SIDEBAR_WIDTH : 0,
-          transition: "margin-left 0.2s ease-out",
-          overflow: "hidden",
-        }}
-      >
-        <Header
-          workspaceName={currentWs?.title ?? null}
-          onMenuToggle={() => setDrawerOpen((o) => !o)}
-          showMenuButton={!isDesktop}
+      <main className="remote-main" inert={drawerOpen}>
+        <header className="header">
+          <h1 aria-label={workspace?.title || "Sessions"}>
+            <button
+              type="button"
+              className="session-switch"
+              onClick={openDrawer}
+              aria-label="Choose session"
+              title={workspace?.title || "Sessions"}
+            >
+              <IconLayoutSidebar size={18} stroke={1.6} aria-hidden="true" />
+              <span>{workspace?.title || "Sessions"}</span>
+            </button>
+          </h1>
+          <span
+            className={`connection ${remote.status === "connected" && remote.fresh ? "connected" : ""}`}
+            role="status"
+            aria-label={connection}
+            title={
+              remote.lastReadAt
+                ? `Updated ${new Date(remote.lastReadAt).toLocaleTimeString("en", { hour12: false })}`
+                : undefined
+            }
+          >
+            <span className="connection-dot" aria-hidden="true" />
+          </span>
+          <button
+            type="button"
+            className="icon-button"
+            aria-label="Display"
+            aria-controls="terminal-view-controls"
+            aria-haspopup="dialog"
+            aria-expanded={controlsOpen}
+            onClick={() => setControlsOpen((open) => !open)}
+          >
+            <IconAdjustmentsHorizontal size={18} stroke={1.6} aria-hidden="true" />
+          </button>
+        </header>
+        {terminals.length > 0 && (terminals.length > 1 || !remote.currentSurface) && (
+          <fieldset className="surface-tabs" aria-label="Terminals">
+            {terminals.map((item, index) => (
+              <button
+                type="button"
+                key={item.id}
+                aria-pressed={item.id === remote.currentSurface}
+                onClick={() => {
+                  setControlsOpen(false);
+                  remote.selectSurface(item.id);
+                }}
+                title={item.title}
+              >
+                <span className="surface-number">{index + 1}</span>
+                <span className="surface-title">{item.title || "Terminal"}</span>
+              </button>
+            ))}
+          </fieldset>
+        )}
+        {stateMessage && (
+          <div className="notice" role="status">
+            <span>{stateMessage}</span>
+            {remote.readError?.code === "unsupported_version" ? (
+              <button type="button" onClick={() => window.location.reload()}>
+                Reload
+              </button>
+            ) : selectingSession ? (
+              <button type="button" onClick={openDrawer}>
+                Select
+              </button>
+            ) : (
+              !selectingTerminal &&
+              (remote.status !== "connected" || remote.readError) && (
+                <button type="button" onClick={remote.reconnect}>
+                  Retry
+                </button>
+              )
+            )}
+          </div>
+        )}
+        <Terminal
+          key={remote.targetKey}
+          content={remote.content}
+          followRequest={followRequest}
+          controlsOpen={controlsOpen}
+          onControlsClose={closeControls}
         />
-
-        <Terminal content={termContent} gestureRef={gestureRef} />
-
-        <StatusBar
-          status={status}
-          paneName={currentPaneInfo?.ref ?? currentPane}
-          paneIndex={panes.findIndex((p) => p.selected_surface_ref === currentPane)}
-          paneCount={panes.length}
-        />
-      </div>
+        <section className="composer" aria-label="Terminal input">
+          {remote.inputError && (
+            <div className="input-error" role="alert">
+              <strong>
+                {remote.inputError.delivery === "text_inserted"
+                  ? "Text inserted; Enter was not confirmed."
+                  : remote.recoveryRequired
+                    ? "Input needs recovery."
+                    : "Input was not sent."}
+              </strong>
+              <p>
+                {remote.recoveryRequired
+                  ? "Check the output. Recovery sends Ctrl+C and may interrupt the running command."
+                  : remote.inputError.message}
+              </p>
+              <div className="error-actions">
+                {remote.recoveryRequired ? (
+                  <button
+                    type="button"
+                    disabled={!remote.canRecover}
+                    onClick={() => {
+                      void remote.recoverInput();
+                    }}
+                  >
+                    Send Ctrl+C to recover
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={!remote.canAcknowledgeInputError}
+                    onClick={remote.acknowledgeInputError}
+                  >
+                    Dismiss
+                  </button>
+                )}
+                <details>
+                  <summary>Details</summary>
+                  <p>{remote.inputError.message}</p>
+                  {remote.inputError.detail && <p>{remote.inputError.detail}</p>}
+                </details>
+              </div>
+            </div>
+          )}
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void sendDraft(true);
+            }}
+          >
+            <div className="composer-field">
+              <label htmlFor="draft" className="sr-only">
+                Terminal text
+              </label>
+              <textarea
+                ref={inputRef}
+                id="draft"
+                value={draft}
+                rows={1}
+                disabled={!remote.currentSurface}
+                autoCapitalize="off"
+                autoCorrect="off"
+                spellCheck={false}
+                enterKeyHint="send"
+                placeholder={remote.currentSurface ? "Message…" : "Choose a terminal"}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                    event.preventDefault();
+                    void sendDraft(true);
+                  }
+                }}
+                onChange={(event) => {
+                  setDrafts((previous) => ({
+                    ...previous,
+                    [remote.targetKey]: event.target.value,
+                  }));
+                  setFeedback(null);
+                }}
+              />
+              <button
+                type="submit"
+                className="primary"
+                aria-label="Send command"
+                aria-busy={remote.sending}
+                disabled={!canSend}
+              >
+                <IconArrowUp size={18} stroke={1.6} aria-hidden="true" />
+              </button>
+            </div>
+            {draftError && (
+              <p className="draft-error" role="alert">
+                {draftError}
+              </p>
+            )}
+            <div className="composer-actions">
+              <button
+                type="button"
+                className="key-button"
+                aria-label="Enter"
+                disabled={!remote.canInput}
+                onClick={() => sendTerminalKey("enter")}
+              >
+                <IconCornerDownLeft size={18} stroke={1.6} aria-hidden="true" />
+                <span>Enter</span>
+              </button>
+              <button
+                type="button"
+                className="key-button interrupt"
+                aria-label="Ctrl+C"
+                disabled={!remote.canInput}
+                onClick={() => sendTerminalKey("ctrl+c")}
+              >
+                <IconPlayerStop size={18} stroke={1.6} aria-hidden="true" />
+                <span>Ctrl+C</span>
+              </button>
+              <button
+                type="button"
+                className="insert-button"
+                aria-label="Insert"
+                disabled={!canSend}
+                onClick={() => {
+                  void sendDraft(false);
+                }}
+                title="Insert text without Enter"
+              >
+                <IconClipboard size={18} stroke={1.6} aria-hidden="true" />
+              </button>
+              <span className="send-feedback" role="status">
+                {feedback?.target === remote.targetKey ? feedback.text : ""}
+              </span>
+            </div>
+          </form>
+        </section>
+      </main>
     </div>
   );
 }

@@ -1,119 +1,114 @@
-# cmux-remote
+# cmux Remote
 
-[日本語](README.ja.md)
+Control the cmux terminals on your Mac from a browser over your private Tailscale network.
 
-Remote terminal viewer for [cmux](https://cmux.dev) — access your cmux workspaces from anywhere via iPhone PWA.
+The Mac runs your tools. This companion gives your phone a small interface for reading
+output, switching workspaces, and sending input. It uses cmux's local CLI; it does not
+require the official cmux iOS subscription.
 
-## Overview
+## What it does
 
-cmux-remote is a lightweight bridge that lets you monitor and switch between cmux terminal workspaces from your iPhone. Designed for developers who use AI-assisted coding and primarily need to **watch** terminal output on the go.
+- Browse workspaces and terminals without changing focus on the Mac.
+- Read snapshots with adjustable 6–20 px text and an original-layout view.
+- Keep the displayed snapshot still while you scroll through earlier output.
+- Submit a line with Enter, insert text without Enter, or send Enter and Ctrl+C.
+- Preserve drafts while switching terminals or reconnecting.
+- Block further input after an uncertain write until you explicitly recover the terminal.
 
-```
-iPhone PWA (React + xterm.js)
-    ↕ WebSocket
-Bridge Server (Bun + Hono)
-    ↕ Unix Domain Socket
-cmux (~/.../cmux.sock)
-```
+The interface uses Tabler icons and supports narrow mobile screens. All application-owned
+copy is in English. Workspace names and terminal content stay exactly as supplied by cmux.
 
-### Key Features
+![Mobile interface with the Atlas demo session](docs/images/mobile.jpg)
 
-- **Real-time terminal display** via xterm.js with 1-second polling
-- **Gesture navigation** — 2-finger swipe up/down to switch workspaces, left/right to switch panes
-- **PWA** — install to home screen for a native app experience
-- **Lightweight** — ~144KB gzipped client, zero cloud infrastructure required
-- **Secure** — deploy behind Tailscale or Cloudflare Tunnel
+The screenshot uses synthetic terminal data. [Desktop view](docs/images/desktop.jpg).
 
-## Prerequisites
+## Requirements
 
-- [cmux](https://cmux.dev) running on your local machine
-- [Bun](https://bun.sh) runtime
-- Network tunnel for remote access (e.g., [Tailscale](https://tailscale.com), [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/))
+For a live host:
 
-## Quick Start
+- macOS with cmux installed and running. Native integration was tested with cmux 0.64.22.
+- Bun; the development and CI version is pinned in `.bun-version`.
+- Tailscale on the Mac and phone, using the same Tailscale account.
+- Native cmux socket access. The default setup below runs inside a cmux terminal.
 
-### 1. Build the client
+For source checks only, cmux and Tailscale are not needed. Tests use fake executables and
+temporary loopback listeners.
 
-```bash
-cd client
-bun install
+## Quick start
+
+From a checkout or extracted source archive, open a terminal **inside cmux** and run:
+
+```sh
+bun install --frozen-lockfile
 bun run build
-```
-
-### 2. Start the bridge server
-
-```bash
-cd server
-bun install
+bun run doctor
 bun run start
 ```
 
-The server starts on `http://localhost:3456` by default.
+Get the source from [GitHub](https://github.com/malakhov-dmitrii/cmux-remote) or
+download a versioned archive from [Releases](https://github.com/malakhov-dmitrii/cmux-remote/releases).
 
-### 3. Access from iPhone
+Keep the process running. In a second terminal, expose it privately:
 
-Open `http://<your-host>:3456` in Safari and add to home screen.
+```sh
+tailscale serve --bg --https=8443 http://127.0.0.1:49163
+```
 
-## Configuration
+Tailscale may ask you to enable Serve and HTTPS first. Open the printed remote URL on
+your phone with Tailscale connected. In Safari, you can add the page to your Home Screen.
 
-| Environment Variable | Default | Description |
-|---|---|---|
-| `PORT` | `3456` | Bridge server port |
-| `CMUX_SOCKET_PATH` | `~/Library/Application Support/cmux/cmux.sock` | cmux Unix socket path |
-| `CMUX_BIN_PATH` | `/Applications/cmux.app/Contents/Resources/bin/cmux` | cmux binary path |
+The launcher discovers your Mac's Tailscale address and owner identity. It does not
+contain a preconfigured account or hostname. See [configuration](docs/configuration.md)
+for ports, executable paths, and recovery-state storage.
+
+## Using the terminal
+
+Select a workspace from the header, then a terminal if it has more than one.
+The arrow button sends the text and Enter as one remote operation. The insert button
+sends text only. The keys underneath the field send Enter or Ctrl+C.
+
+Display settings control text size and reading mode. **Text** wraps output and removes
+box-drawing frames. **Original** keeps the exact snapshot layout. Scrolling back freezes
+the shown snapshot; the down-arrow returns to the latest output.
+
+If a write fails or its result is uncertain, inspect the terminal before choosing
+**Send Ctrl+C to recover**. Recovery can interrupt a running command. The application
+never retries terminal input or performs recovery automatically.
+
+## Limits
+
+The remote reads snapshots of up to 200 lines roughly once a second. Streaming VT
+interaction is outside this release. Input accepts one line, up to 8,000 characters. There is no
+multiline paste, terminal creation/deletion, or remote resize control.
+
+Your Mac must remain awake, connected, and logged into its user session. The foreground
+bridge stops when its process closes. An optional launchd template is documented in
+[background operation](docs/operations.md); installing a template does not remove the
+Mac, login, or native cmux access requirements.
+
+The bridge is designed for **Tailscale Serve** and a trusted local machine. Generic
+public tunnels and arbitrary authentication proxies are unsupported. Read the
+[security model](SECURITY.md) before changing access settings.
 
 ## Development
 
-```bash
-# Terminal 1: Start the server in watch mode
-cd server && bun run dev
-
-# Terminal 2: Start the client dev server (with proxy to bridge server)
-cd client && bun run dev
+```sh
+bun install --frozen-lockfile
+bun run check
+bun run dev
 ```
 
-The Vite dev server proxies `/ws` and `/health` to `localhost:3456`.
+Development uses the same server origin as normal operation. The client rebuilds on
+changes; reload the browser to see them. No development proxy bypasses origin validation.
 
-### Running Tests
+[Contributing](CONTRIBUTING.md) · [Architecture and protocol](docs/architecture.md) ·
+[Troubleshooting](docs/troubleshooting.md) · [Release checklist](docs/releasing.md)
 
-```bash
-# Client tests
-cd client && bun run test
+## Attribution
 
-# Server tests
-cd server && bun test
-```
+Based on [hummer98/cmux-remote](https://github.com/hummer98/cmux-remote), originally by
+Yuji Yamamoto. The original MIT notice is preserved in [LICENSE](LICENSE).
+This is an independent companion, not an official Manaflow product.
 
-## Architecture
-
-### Bridge Server (`server/`)
-
-Built with Bun + Hono. Handles:
-
-- **WebSocket relay** — transparent JSON-RPC proxy between the PWA and cmux Unix socket
-- **CLI fallback** — some methods (e.g., `surface.read_text`) use the `cmux` CLI for reliability
-- **Static file serving** — serves the built PWA from `client/dist/`
-- **Health check** — `GET /health` returns server and cmux socket status
-
-### PWA Client (`client/`)
-
-Built with React 19 + TypeScript + Vite. Components:
-
-| Component | Role |
-|---|---|
-| `Terminal` | xterm.js terminal renderer |
-| `Header` | Workspace name + hamburger menu |
-| `Drawer` | Workspace list sidebar (responsive) |
-| `StatusBar` | Connection status indicator |
-
-Hooks:
-
-| Hook | Role |
-|---|---|
-| `useWebSocket` | Connection management with exponential backoff reconnect |
-| `useCmux` | cmux JSON-RPC wrapper |
-| `useGesture` | Hammer.js 2-finger gesture handling |
-
-## License
-
-[MIT](LICENSE)
+Icons: [Tabler Icons](https://tabler.io/icons), used under MIT. See [NOTICE.md](NOTICE.md)
+and [LICENSES/Tabler.txt](LICENSES/Tabler.txt).

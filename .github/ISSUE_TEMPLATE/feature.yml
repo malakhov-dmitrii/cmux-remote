@@ -1,0 +1,15 @@
+name: Feature request
+description: Describe a workflow this project does not support.
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: Include the current workaround and why it is insufficient.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Explain how the feature would fit the existing private terminal workflow.

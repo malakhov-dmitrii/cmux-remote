@@ -5,87 +5,63 @@ export type ConnectionStatus = "connecting" | "connected" | "disconnected";
 interface UseWebSocketOptions {
   url: string;
   onMessage: (data: string) => void;
-  maxRetries?: number;
+  onDisconnect: () => void;
 }
 
-const DEFAULT_MAX_RETRIES = 10;
+export function useWebSocket({ url, onMessage, onDisconnect }: UseWebSocketOptions) {
+  const [status, setStatus] = useState<ConnectionStatus>("connecting");
+  const [connectionAttempt, setConnectionAttempt] = useState(0);
+  const socketRef = useRef<WebSocket | null>(null);
+  const callbacks = useRef({ onMessage, onDisconnect });
+  callbacks.current = { onMessage, onDisconnect };
 
-export function useWebSocket({ url, onMessage, maxRetries = DEFAULT_MAX_RETRIES }: UseWebSocketOptions) {
-  const [status, setStatus] = useState<ConnectionStatus>("disconnected");
-  const wsRef = useRef<WebSocket | null>(null);
-  const retryRef = useRef(0);
-  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const onMessageRef = useRef(onMessage);
-  const unmountedRef = useRef(false);
-  onMessageRef.current = onMessage;
-
-  const clearRetryTimer = useCallback(() => {
-    if (retryTimerRef.current !== null) {
-      clearTimeout(retryTimerRef.current);
-      retryTimerRef.current = null;
-    }
-  }, []);
-
-  const connect = useCallback(() => {
-    if (unmountedRef.current) return;
-    if (wsRef.current?.readyState === WebSocket.OPEN) return;
-
-    clearRetryTimer();
-    setStatus("connecting");
-    const ws = new WebSocket(url);
-
-    ws.onopen = () => {
-      setStatus("connected");
-      retryRef.current = 0;
-      console.log("[ws] Connected");
-    };
-
-    ws.onmessage = (event) => {
-      onMessageRef.current(event.data as string);
-    };
-
-    ws.onclose = () => {
-      setStatus("disconnected");
-      wsRef.current = null;
-
-      if (unmountedRef.current) return;
-
-      if (retryRef.current >= maxRetries) {
-        console.log(`[ws] Max retries (${maxRetries}) reached, giving up`);
-        return;
-      }
-
-      // Exponential backoff: 1s, 2s, 4s, ... max 30s
-      const delay = Math.min(1000 * 2 ** retryRef.current, 30_000);
-      retryRef.current++;
-      console.log(`[ws] Reconnecting in ${delay}ms (attempt ${retryRef.current}/${maxRetries})...`);
-      retryTimerRef.current = setTimeout(connect, delay);
-    };
-
-    ws.onerror = (err) => {
-      console.error("[ws] Error:", err);
-      ws.close();
-    };
-
-    wsRef.current = ws;
-  }, [url, maxRetries, clearRetryTimer]);
-
-  const send = useCallback((data: string) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(data);
-    }
-  }, []);
-
+  // biome-ignore lint/correctness/useExhaustiveDependencies: connectionAttempt is an explicit request to replace the current socket.
   useEffect(() => {
-    unmountedRef.current = false;
+    let disposed = false;
+    let retries = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const connect = () => {
+      if (disposed) return;
+      setStatus("connecting");
+      const socket = new WebSocket(url);
+      socketRef.current = socket;
+      socket.onopen = () => {
+        if (disposed || socketRef.current !== socket) return;
+        retries = 0;
+        setStatus("connected");
+      };
+      socket.onmessage = (event: MessageEvent<unknown>) => {
+        if (!disposed && socketRef.current === socket && typeof event.data === "string") {
+          callbacks.current.onMessage(event.data);
+        }
+      };
+      socket.onclose = () => {
+        if (disposed || socketRef.current !== socket) return;
+        socketRef.current = null;
+        callbacks.current.onDisconnect();
+        setStatus("disconnected");
+        if (retries < 10) timer = setTimeout(connect, Math.min(1000 * 2 ** retries++, 30_000));
+      };
+      socket.onerror = () => socket.close();
+    };
     connect();
     return () => {
-      unmountedRef.current = true;
-      clearRetryTimer();
-      wsRef.current?.close();
-      wsRef.current = null;
+      disposed = true;
+      clearTimeout(timer);
+      callbacks.current.onDisconnect();
+      socketRef.current?.close();
+      socketRef.current = null;
     };
-  }, [connect, clearRetryTimer]);
+  }, [url, connectionAttempt]);
 
-  return { status, send };
+  const send = useCallback((data: string): boolean => {
+    const socket = socketRef.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return false;
+    socket.send(data);
+    return true;
+  }, []);
+
+  const reconnect = useCallback(() => setConnectionAttempt((attempt) => attempt + 1), []);
+  return { status, send, reconnect };
 }

@@ -1,37 +1,45 @@
-import { join } from "path";
+import { join } from "node:path";
 import { Hono } from "hono";
 import { serveStatic } from "hono/bun";
-import { health } from "./health";
-import { createWebSocketHandler } from "./ws";
-
-const app = new Hono();
-const port = parseInt(process.env.PORT ?? "3456", 10);
-const clientDistPath = join(import.meta.dir, "../../client/dist");
-
-// Health check
-app.route("/", health);
-
-// Static files (PWA)
-app.use("/*", serveStatic({ root: clientDistPath }));
-
-const wsHandler = createWebSocketHandler();
-
-const server = Bun.serve({
-  port,
-  fetch(req, server) {
-    const url = new URL(req.url);
-
-    // WebSocket upgrade
-    if (url.pathname === "/ws") {
-      const upgraded = server.upgrade(req, { data: {} as any });
-      if (upgraded) return undefined;
-      return new Response("WebSocket upgrade failed", { status: 400 });
-    }
-
-    // Hono handles the rest
-    return app.fetch(req, server);
-  },
-  websocket: wsHandler,
-});
-
-console.log(`[server] cmux-remote bridge running on http://localhost:${server.port}`);
+import { type AccessConfig, authorizeRequest } from "./access";
+import { createHealth } from "./health";
+import { InputState } from "./input-state";
+import type { Executor } from "./rpc";
+import { createWebSocketHandler, type WSData } from "./ws";
+export function startBridge(
+  config: AccessConfig,
+  port: number,
+  execute?: Executor,
+  state = new InputState(),
+) {
+  const app = new Hono();
+  app.use("*", async (c, next) => {
+    await next();
+    c.header("Cache-Control", "no-store");
+    c.header("X-Content-Type-Options", "nosniff");
+    c.header("Referrer-Policy", "no-referrer");
+    c.header(
+      "Content-Security-Policy",
+      "default-src 'self'; connect-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'",
+    );
+  });
+  app.route("/", createHealth(execute));
+  app.use("/*", serveStatic({ root: join(import.meta.dir, "../../client/dist") }));
+  return Bun.serve<WSData>({
+    hostname: "127.0.0.1",
+    port,
+    fetch(req, server) {
+      if (!authorizeRequest(req, config))
+        return new Response("Access denied", {
+          status: 403,
+          headers: { "Cache-Control": "no-store" },
+        });
+      if (new URL(req.url).pathname === "/ws") {
+        if (server.upgrade(req, { data: { active: true, inFlight: 0, seen: new Set() } })) return;
+        return new Response("WebSocket upgrade required", { status: 400 });
+      }
+      return app.fetch(req);
+    },
+    websocket: createWebSocketHandler(execute, state),
+  });
+}

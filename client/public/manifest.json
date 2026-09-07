@@ -1,11 +1,12 @@
 {
   "name": "cmux Remote",
   "short_name": "cmux",
+  "lang": "en",
   "start_url": "/",
   "display": "standalone",
-  "orientation": "portrait",
-  "theme_color": "#1a1a2e",
-  "background_color": "#1a1a2e",
+  "orientation": "any",
+  "theme_color": "#0d1117",
+  "background_color": "#0d1117",
   "icons": [
     {
       "src": "/icon-192.png",

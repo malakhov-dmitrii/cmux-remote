@@ -1,0 +1,36 @@
+{
+  "name": "cmux-remote",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A private browser companion for cmux workspaces and terminals.",
+  "license": "MIT",
+  "packageManager": "bun@1.3.14",
+  "engines": {
+    "bun": ">=1.3.14"
+  },
+  "workspaces": [
+    "client",
+    "server"
+  ],
+  "scripts": {
+    "start": "bun scripts/serve.ts",
+    "doctor": "bun scripts/doctor.ts",
+    "service:template": "bun scripts/service.ts",
+    "dev": "bun scripts/dev.ts",
+    "build": "bun scripts/build.ts",
+    "typecheck": "tsc --noEmit -p client/tsconfig.json && tsc --noEmit -p tsconfig.json",
+    "test": "bun run --cwd client test && bun test server/src shared scripts",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "check:release": "bun scripts/check-release.ts",
+    "check": "bun run typecheck && bun run lint && bun run test && bun run build && bun run check:release",
+    "release:archive": "bun scripts/package-release.ts",
+    "icons": "bun run --cwd client icons"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.12",
+    "@types/bun": "1.4.1",
+    "typescript": "5.9.3"
+  }
+}

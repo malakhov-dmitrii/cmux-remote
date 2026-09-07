@@ -1,6 +1,9 @@
 node_modules/
 dist/
 *.lock
+!bun.lock
+client/bun.lock
+server/bun.lock
 
 # Editor
 .vscode/
@@ -11,11 +14,17 @@ dist/
 
 # OS
 .DS_Store
+._*
 Thumbs.db
 
 # Environment
 .env
 .env.local
+!.env.example
+.state/
+.release/
+coverage/
+*.pid
 
 # Logs
 *.log
