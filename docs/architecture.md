@@ -37,7 +37,9 @@ are rejected.
 | Method | Parameters | Behavior |
 | --- | --- | --- |
 | `workspace.list` | none | List available workspaces. |
+| `workspace.create` | optional `name`, `cwd` | Create a local workspace with an initial terminal. |
 | `surface.list` | `workspace_ref` | List a workspace's surfaces. |
+| `surface.create` | both target UUIDs | Add a terminal tab to the anchor surface's pane. |
 | `surface.read_text` | both target UUIDs | Read up to 200 lines. |
 | `surface.send_text` | both target UUIDs, `text` | Insert one line without Enter. |
 | `surface.send_key` | both target UUIDs, `key` | Send `enter` or `ctrl+c`. |
@@ -49,6 +51,29 @@ position from redirecting input to another terminal.
 
 Text is limited to 8,000 characters and cannot contain newlines or control bytes.
 The server reconstructs allowed parameters; it is not a transparent cmux RPC proxy.
+
+## Creating workspaces and tabs
+
+Workspace names accept up to 80 characters; directories accept up to 4,096. Both
+must be single-line strings without control characters. Directory paths are checked
+before native creation. The server expands `~/` without passing input through a shell.
+
+Creation uses fresh native metadata to pin the window and pane UUIDs. Native calls
+always set `focus:false` and terminal type where applicable. The server checks the
+returned target and its membership before replying with `{workspace_id,surface_id}`.
+Unknown/native-only parameters such as arbitrary commands are not forwarded.
+
+Blank background shells in cmux can exist before their terminal runtime starts.
+After validating the new target, the bridge internally calls native `terminal.replay`
+with its exact IDs to initialize it without focus or input. It supplies no viewport
+fields. A bounded `surface.read_text` check must then succeed before creation is
+acknowledged. Rendering data from the initialization call is discarded; this native
+method is not exposed through the browser protocol.
+
+Creation has a separate in-flight guard and error state. A lost response can leave
+an object created on the Mac, so clients must inspect the list before explicitly
+trying again. Creation is never automatically retried, and it does not use the
+terminal-input recovery markers or send Ctrl+C. Remote SSH/tmux creation is unsupported.
 
 ## Failures and recovery
 

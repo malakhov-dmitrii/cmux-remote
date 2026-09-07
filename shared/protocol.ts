@@ -30,9 +30,19 @@ export class RemoteError extends Error {
   }
 }
 type Target = { workspace_ref: string; surface_ref: string };
+export interface WorkspaceOptions {
+  name?: string;
+  cwd?: string;
+}
+export interface CreatedTarget {
+  workspace_id: string;
+  surface_id: string;
+}
 type Request<M extends string, P> = { version: 1; id: string; method: M; params: P };
 export type RpcRequest =
   | Request<"workspace.list", Record<string, never>>
+  | Request<"workspace.create", WorkspaceOptions>
+  | Request<"surface.create", Target>
   | Request<"surface.list", { workspace_ref: string }>
   | Request<"surface.read_text", Target>
   | Request<"surface.send_text" | "surface.submit", Target & { text: string }>
@@ -72,6 +82,34 @@ export function validateInputText(text: string): string | null {
   return null;
 }
 export const isValidInputText = (text: string) => validateInputText(text) === null;
+export function normalizeWorkspaceOptions(value: Record<string, unknown>): WorkspaceOptions {
+  const options: WorkspaceOptions = {};
+  for (const [key, limit] of [
+    ["name", 80],
+    ["cwd", 4096],
+  ] as const) {
+    const raw = value[key];
+    if (raw === undefined) continue;
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: Creation fields must not carry terminal or path control bytes.
+    if (typeof raw !== "string" || raw.length > limit || /[\x00-\x1f\x7f]/.test(raw))
+      throw new RemoteError(
+        "invalid_request",
+        `${key === "name" ? "Name" : "Directory"} must be one line, up to ${limit} characters.`,
+      );
+    const text = raw.trim();
+    if (text) options[key] = text;
+  }
+  return options;
+}
+export function parseCreatedTarget(value: unknown): CreatedTarget {
+  if (!isRecord(value) || !isUuid(value.workspace_id) || !isUuid(value.surface_id))
+    throw new RemoteError(
+      "invalid_response",
+      "Creation was not confirmed. Check sessions before trying again.",
+      "unknown",
+    );
+  return { workspace_id: value.workspace_id, surface_id: value.surface_id };
+}
 function uuidParam(params: Record<string, unknown>, key: string): string {
   const value = params[key];
   if (!isUuid(value))
@@ -94,6 +132,8 @@ export function decodeRpcRequest(value: unknown): RpcRequest {
   const base = { version: PROTOCOL_VERSION, id: value.id } as const;
   const params = value.params;
   if (value.method === "workspace.list") return { ...base, method: value.method, params: {} };
+  if (value.method === "workspace.create")
+    return { ...base, method: value.method, params: normalizeWorkspaceOptions(params) };
   if (value.method === "surface.list")
     return {
       ...base,
@@ -101,9 +141,13 @@ export function decodeRpcRequest(value: unknown): RpcRequest {
       params: { workspace_ref: uuidParam(params, "workspace_ref") },
     };
   if (
-    !["surface.read_text", "surface.send_text", "surface.send_key", "surface.submit"].includes(
-      value.method,
-    )
+    ![
+      "surface.read_text",
+      "surface.send_text",
+      "surface.send_key",
+      "surface.submit",
+      "surface.create",
+    ].includes(value.method)
   ) {
     throw new RemoteError("invalid_request", "This method is not available in the remote.");
   }
@@ -111,6 +155,7 @@ export function decodeRpcRequest(value: unknown): RpcRequest {
     workspace_ref: uuidParam(params, "workspace_ref"),
     surface_ref: uuidParam(params, "surface_ref"),
   };
+  if (value.method === "surface.create") return { ...base, method: value.method, params: target };
   if (value.method === "surface.read_text")
     return { ...base, method: value.method, params: target };
   if (value.method === "surface.send_text" || value.method === "surface.submit") {

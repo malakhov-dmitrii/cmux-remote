@@ -8,6 +8,7 @@ import {
 } from "@tabler/icons-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { validateInputText } from "../../shared/protocol";
+import { CreateMenu, type CreationView } from "./components/CreateMenu";
 import { Drawer } from "./components/Drawer";
 import { Terminal } from "./components/Terminal";
 import { useCmux } from "./hooks/useCmux";
@@ -16,10 +17,16 @@ export function App() {
   const remote = useCmux();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [controlsOpen, setControlsOpen] = useState(false);
+  const [creationView, setCreationView] = useState<CreationView>(null);
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
   const closeControls = useCallback(() => setControlsOpen(false), []);
+  const changeCreationView = useCallback((view: CreationView) => {
+    setCreationView(view);
+    if (view) setControlsOpen(false);
+  }, []);
   const openDrawer = () => {
     setControlsOpen(false);
+    setCreationView(null);
     if (window.innerWidth >= 768) {
       document.querySelector<HTMLInputElement>(".session-search input")?.focus();
       return;
@@ -86,6 +93,7 @@ export function App() {
   };
   const selectingSession =
     remote.loaded &&
+    remote.workspaces.length > 0 &&
     !remote.currentWorkspace &&
     (!remote.readError || remote.readError.code === "invalid_request");
   const selectingTerminal =
@@ -94,13 +102,18 @@ export function App() {
     !!remote.currentWorkspace &&
     !remote.currentSurface &&
     remote.readError?.code === "invalid_request";
+  const emptyWorkspaces =
+    remote.status === "connected" &&
+    remote.loaded &&
+    remote.workspaces.length === 0 &&
+    !remote.readError;
   let stateMessage: string | null = null;
   if (remote.readError?.code === "unsupported_version") stateMessage = remote.readError.message;
   else if (remote.status !== "connected")
     stateMessage = "Disconnected from your Mac. Your draft stays here.";
   else if (remote.readError) stateMessage = remote.readError.message;
   else if (!remote.loaded) stateMessage = "Loading sessions…";
-  else if (remote.workspaces.length === 0) stateMessage = "Open a cmux session on your Mac.";
+  else if (remote.workspaces.length === 0) stateMessage = "Create your first workspace.";
   else if (!remote.currentWorkspace) stateMessage = "Choose a session.";
   else if (!remote.surfacesLoaded) stateMessage = "Loading terminals…";
   else if (!remote.currentSurface && terminals.length === 0)
@@ -148,6 +161,12 @@ export function App() {
           >
             <span className="connection-dot" aria-hidden="true" />
           </span>
+          <CreateMenu
+            creation={remote.creation}
+            view={creationView}
+            onViewChange={changeCreationView}
+            onViewSessions={openDrawer}
+          />
           <button
             type="button"
             className="icon-button"
@@ -155,7 +174,10 @@ export function App() {
             aria-controls="terminal-view-controls"
             aria-haspopup="dialog"
             aria-expanded={controlsOpen}
-            onClick={() => setControlsOpen((open) => !open)}
+            onClick={() => {
+              setCreationView(null);
+              setControlsOpen((open) => !open);
+            }}
           >
             <IconAdjustmentsHorizontal size={18} stroke={1.6} aria-hidden="true" />
           </button>
@@ -169,6 +191,7 @@ export function App() {
                 aria-pressed={item.id === remote.currentSurface}
                 onClick={() => {
                   setControlsOpen(false);
+                  setCreationView(null);
                   remote.selectSurface(item.id);
                 }}
                 title={item.title}
@@ -186,6 +209,14 @@ export function App() {
               <button type="button" onClick={() => window.location.reload()}>
                 Reload
               </button>
+            ) : emptyWorkspaces ? (
+              <button
+                type="button"
+                disabled={!remote.creation.canCreateWorkspace}
+                onClick={() => changeCreationView("workspace")}
+              >
+                New workspace
+              </button>
             ) : selectingSession ? (
               <button type="button" onClick={openDrawer}>
                 Select
@@ -198,6 +229,18 @@ export function App() {
                 </button>
               )
             )}
+          </div>
+        )}
+        {remote.creation.error && !creationView && (
+          <div className="notice" role="alert">
+            <span>
+              {remote.creation.error.delivery === "not_sent"
+                ? remote.creation.error.message
+                : "Creation was not confirmed. Check sessions before trying again."}
+            </span>
+            <button type="button" onClick={() => changeCreationView("menu")}>
+              Review
+            </button>
           </div>
         )}
         <Terminal

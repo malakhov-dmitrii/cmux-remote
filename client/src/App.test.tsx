@@ -32,6 +32,15 @@ const mocked = vi.hoisted(() => ({
     recoverInput: vi.fn(),
     acknowledgeInputError: vi.fn(),
     reconnect: vi.fn(),
+    creation: {
+      busy: false,
+      error: ((): RpcError | null => null)(),
+      canCreateWorkspace: true,
+      canCreateTerminal: true,
+      createWorkspace: vi.fn(async () => true),
+      createTerminal: vi.fn(async () => true),
+      acknowledgeError: vi.fn(),
+    },
   },
 }));
 vi.mock("./hooks/useCmux", () => ({ useCmux: () => mocked.current }));
@@ -51,6 +60,10 @@ beforeEach(() => {
   mocked.current.canRecover = false;
   mocked.current.canAcknowledgeInputError = false;
   mocked.current.canInput = true;
+  mocked.current.creation.busy = false;
+  mocked.current.creation.error = null;
+  mocked.current.creation.canCreateWorkspace = true;
+  mocked.current.creation.canCreateTerminal = true;
   mocked.current.status = "connected";
   mocked.current.loaded = true;
   mocked.current.fresh = true;
@@ -64,6 +77,26 @@ afterEach(() => {
 });
 
 describe("remote composer", () => {
+  it("opens creation from an empty workspace list", () => {
+    mocked.current.workspaces = [];
+    mocked.current.currentWorkspace = "";
+    mocked.current.currentSurface = "";
+    mocked.current.surfaces = [];
+    mocked.current.creation.canCreateTerminal = false;
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "New workspace" }));
+    expect(screen.getByRole("dialog", { name: "New workspace" })).toBeTruthy();
+    expect(screen.getByLabelText("Name")).toBeTruthy();
+  });
+  it("preserves the terminal draft while opening and cancelling creation", () => {
+    render(<App />);
+    const editor = screen.getByLabelText<HTMLTextAreaElement>("Terminal text");
+    fireEvent.change(editor, { target: { value: "keep this draft" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+    fireEvent.click(screen.getByRole("button", { name: "New workspace" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(editor.value).toBe("keep this draft");
+  });
   it.each(["workspace", "surface"])("shows an initial %s list failure with Retry", (stage) => {
     mocked.current.loaded = stage === "surface";
     mocked.current.workspaces = stage === "surface" ? mocked.current.workspaces : [];

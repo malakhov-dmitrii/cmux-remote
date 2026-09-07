@@ -8,6 +8,7 @@ import {
   type RpcRequest,
   type RpcResponse,
 } from "../../shared/protocol";
+import { createRemoteTarget } from "./creation";
 import { InputState } from "./input-state";
 
 export type Executor = (method: string, params: Record<string, unknown>) => Promise<unknown>;
@@ -53,6 +54,12 @@ export async function handleRpc(
   };
   try {
     assertActive();
+    if (request.method === "workspace.create" || request.method === "surface.create")
+      return {
+        id: request.id,
+        ok: true,
+        result: await createRemoteTarget(request, execute, active),
+      };
     if (request.method === "workspace.list")
       return {
         id: request.id,

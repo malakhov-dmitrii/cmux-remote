@@ -38,7 +38,7 @@ request names both workspace and surface UUIDs. Input never passes through a she
 on the bridge; JSON is one argument to the native cmux CLI.
 
 A submit operation holds a per-terminal lock through text and Enter. Competing remote
-writes fail busy instead of waiting in a replay queue. Before a native write, the
+writes fail busy instead of waiting in a replay queue. Before a native terminal-input write, the
 bridge creates a private pending marker. It clears that marker after native cmux
 acknowledges every stage of the operation. Incomplete or uncertain native writes
 leave further writes blocked, including after a bridge restart.
@@ -54,6 +54,18 @@ terminal output. The state directory requires mode 0700 and marker files use mod
 These protections do not lock the physical Mac keyboard or unrelated cmux clients.
 Insert-only input intentionally edits a shared terminal buffer. Avoid simultaneous
 manual editing from multiple places.
+
+## Creation
+
+Workspace creation accepts a bounded name and an existing directory. Tab creation
+requires explicit workspace and anchor-surface UUIDs; the bridge resolves the pane
+from native metadata. It creates terminal surfaces only and passes `focus:false`.
+Creation options cannot supply an arbitrary command, browser URL, native focus flag
+or raw pane ID. It never forwards a caller's parameters wholesale to cmux.
+
+Creation does not use terminal-input recovery markers. An interrupted request may
+have created an object even when no result reaches the browser. The UI retains an
+explicit error and never retries automatically. Inspect the list before trying again.
 
 ## Data handling
 

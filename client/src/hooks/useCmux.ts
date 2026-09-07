@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  type CreatedTarget,
   createRpcRequest,
   type Delivery,
   isRecord,
@@ -14,6 +15,7 @@ import {
   type Surface,
   type Workspace,
 } from "../../../shared/protocol";
+import { useCreation } from "./useCreation";
 import { useWebSocket } from "./useWebSocket";
 
 interface PendingRequest {
@@ -86,6 +88,7 @@ export function useCmux() {
   const [loaded, setLoaded] = useState(false);
   const targetRef = useRef(selection);
   const version = useRef(0);
+  const selectionRevision = useRef(0);
   const freshUntil = useRef(0);
   const freshnessTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const pending = useRef(new Map<string, PendingRequest>());
@@ -213,6 +216,7 @@ export function useCmux() {
         return;
       requireWorkspaceSelection.current = false;
       requireSurfaceSelection.current = false;
+      selectionRevision.current++;
       setSurfaces([]);
       chooseTarget({ workspace: id, surface: null });
     },
@@ -221,12 +225,39 @@ export function useCmux() {
 
   const selectSurface = useCallback(
     (id: string) => {
-      if (!surfaces.some((surface) => surface.id === id && surface.type === "terminal")) return;
+      if (
+        id === targetRef.current.surface ||
+        !surfaces.some((surface) => surface.id === id && surface.type === "terminal")
+      )
+        return;
       requireSurfaceSelection.current = false;
+      selectionRevision.current++;
       chooseTarget({ workspace: targetRef.current.workspace, surface: id });
     },
     [surfaces, chooseTarget],
   );
+
+  const getCreationSelection = useCallback(
+    () => ({ ...targetRef.current, revision: selectionRevision.current }),
+    [],
+  );
+  const selectCreated = useCallback(
+    (target: CreatedTarget) => {
+      requireWorkspaceSelection.current = false;
+      requireSurfaceSelection.current = false;
+      setSurfaces([]);
+      setSurfacesLoaded(false);
+      chooseTarget({ workspace: target.workspace_id, surface: target.surface_id });
+    },
+    [chooseTarget],
+  );
+  const creation = useCreation({
+    connected: status === "connected",
+    terminalAvailable: fresh && !!selection.surface,
+    rpc,
+    getSelection: getCreationSelection,
+    onCreated: selectCreated,
+  });
 
   useEffect(() => {
     if (status !== "connected") return;
@@ -413,6 +444,7 @@ export function useCmux() {
   const ready = status === "connected" && fresh && !!selection.surface && !sending;
 
   return {
+    creation,
     status,
     workspaces,
     surfaces,

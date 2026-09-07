@@ -109,6 +109,88 @@ afterEach(() => {
 });
 
 describe("remote target and input", () => {
+  it("adopts a created workspace without letting an older list erase its UUIDs", async () => {
+    const { result, socket } = await start();
+    await answer(socket, "surface.read_text", { text: "original output" });
+    await act(async () => {
+      vi.advanceTimersByTime(1000);
+    });
+    const newWorkspace = {
+      id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+      ref: "workspace:3",
+      title: "New workspace",
+      index: 2,
+    };
+    const newSurface = {
+      id: "ffffffff-ffff-4fff-8fff-ffffffffffff",
+      ref: "surface:3",
+      title: "New shell",
+      type: "terminal",
+    };
+    act(() => {
+      void result.current.creation.createWorkspace({ name: "New workspace" });
+    });
+    await answer(socket, "workspace.create", {
+      workspace_id: newWorkspace.id,
+      surface_id: newSurface.id,
+    });
+    expect(result.current.currentWorkspace).toBe(newWorkspace.id);
+    expect(result.current.currentSurface).toBe(newSurface.id);
+    expect(result.current.canInput).toBe(false);
+    await answer(socket, "workspace.list", { workspaces });
+    expect(result.current.currentWorkspace).toBe(newWorkspace.id);
+    expect(result.current.content).toBe("");
+    await act(async () => {
+      vi.advanceTimersByTime(1000);
+    });
+    await answer(socket, "workspace.list", { workspaces: [...workspaces, newWorkspace] });
+    await answer(socket, "surface.list", { surfaces: [newSurface] });
+    const read = await answer(socket, "surface.read_text", { text: "new output" });
+    expect(read.params).toEqual({ workspace_ref: newWorkspace.id, surface_ref: newSurface.id });
+    expect(result.current.canInput).toBe(true);
+  });
+
+  it("does not redirect the user after selection changes during creation", async () => {
+    const { result, socket } = await start();
+    await answer(socket, "surface.read_text", { text: "prompt" });
+    act(() => {
+      void result.current.creation.createWorkspace({});
+    });
+    act(() => {
+      result.current.selectSurface(SURFACE_B);
+    });
+    act(() => {
+      result.current.selectSurface(SURFACE_A);
+    });
+    await answer(socket, "workspace.create", {
+      workspace_id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+      surface_id: "ffffffff-ffff-4fff-8fff-ffffffffffff",
+    });
+    expect(result.current.currentWorkspace).toBe(WORKSPACE_A);
+    expect(result.current.currentSurface).toBe(SURFACE_A);
+  });
+
+  it("keeps disconnected creation separate from terminal-input recovery", async () => {
+    const { result, socket } = await start();
+    await answer(socket, "surface.read_text", { text: "prompt" });
+    act(() => {
+      void result.current.creation.createWorkspace({});
+    });
+    await act(async () => {
+      socket.close();
+    });
+    expect(result.current.creation.error?.delivery).toBe("unknown");
+    expect(result.current.inputError).toBe(null);
+    expect(result.current.recoveryRequired).toBe(false);
+    await act(async () => {
+      vi.advanceTimersByTime(1000);
+    });
+    const reconnected = latestSocket();
+    await act(async () => {
+      reconnected.open();
+    });
+    expect(reconnected.requests.some((request) => request.method.endsWith(".create"))).toBe(false);
+  });
   it("submits through one versioned RPC with immutable target IDs", async () => {
     const { result, socket } = await start();
     await answer(socket, "surface.read_text", { text: "prompt" });

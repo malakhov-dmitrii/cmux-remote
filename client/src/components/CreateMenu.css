@@ -1,0 +1,122 @@
+.creation-control {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+}
+.creation-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 16;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: #03060999;
+}
+.creation-popover {
+  position: fixed;
+  top: calc(44px + env(safe-area-inset-top));
+  right: 10px;
+  width: min(310px, calc(100% - 20px));
+  max-height: calc(100% - 54px - env(safe-area-inset-top));
+  overflow-y: auto;
+  z-index: 17;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+}
+.creation-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  padding-left: 6px;
+}
+.creation-menu-action {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 36px;
+  padding: 7px;
+  font-size: 13px;
+  text-align: left;
+}
+.creation-menu-action svg {
+  color: var(--muted);
+}
+.creation-form {
+  margin: 4px 4px 0;
+}
+.creation-form label {
+  display: block;
+  margin: 9px 0 5px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.creation-form input {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+  padding: 7px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  font-size: 16px;
+}
+.creation-form input::placeholder {
+  color: var(--muted);
+}
+.creation-form-actions,
+.creation-error-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 8px;
+}
+.creation-form-actions button {
+  font-size: 12px;
+}
+.creation-confirm {
+  background: var(--accent);
+  color: #14291f;
+}
+.creation-hint,
+.creation-status {
+  margin: 5px 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.creation-validation {
+  margin: 5px 0;
+  font-size: 12px;
+}
+.creation-error {
+  margin: 5px 4px;
+  padding: 8px 0;
+  border-block: 1px solid var(--border);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.creation-error p {
+  margin: 5px 0;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.creation-error-actions {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+.creation-error-actions button {
+  color: var(--accent);
+  font-size: 12px;
+}
+.creation-error summary {
+  cursor: pointer;
+  color: var(--muted);
+  margin-top: 5px;
+}

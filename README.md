@@ -9,6 +9,7 @@ require the official cmux iOS subscription.
 ## What it does
 
 - Browse workspaces and terminals without changing focus on the Mac.
+- Create a workspace or add a terminal tab from the header's plus button.
 - Read snapshots with adjustable 6–20 px text and an original-layout view.
 - Keep the displayed snapshot still while you scroll through earlier output.
 - Submit a line with Enter, insert text without Enter, or send Enter and Ctrl+C.
@@ -63,6 +64,19 @@ for ports, executable paths, and recovery-state storage.
 
 ## Using the terminal
 
+Choose **+ → New workspace** to open a shell in a new workspace. Name and Directory
+are optional; the default directory is your Mac user's home. Directory accepts an
+absolute path or `~/…` and must already exist.
+
+Choose **+ → New terminal** to add a tab beside the selected terminal. The remote
+opens the new target after creation without selecting it in the Mac app. Previous
+terminal drafts stay available when you switch back.
+
+If creation is not confirmed, inspect the session list before trying again: the
+workspace or tab may already exist. Creation is never retried automatically.
+
+[Workspace creation preview](docs/images/creation.jpg), using synthetic data.
+
 Select a workspace from the header, then a terminal if it has more than one.
 The arrow button sends the text and Enter as one remote operation. The insert button
 sends text only. The keys underneath the field send Enter or Ctrl+C.
@@ -79,7 +93,8 @@ never retries terminal input or performs recovery automatically.
 
 The remote reads snapshots of up to 200 lines roughly once a second. Streaming VT
 interaction is outside this release. Input accepts one line, up to 8,000 characters. There is no
-multiline paste, terminal creation/deletion, or remote resize control.
+multiline paste, deletion, split creation, or remote resize control. New terminal
+creation is limited to local workspaces; remote SSH/tmux workspaces are unsupported.
 
 Your Mac must remain awake, connected, and logged into its user session. The foreground
 bridge stops when its process closes. An optional launchd template is documented in

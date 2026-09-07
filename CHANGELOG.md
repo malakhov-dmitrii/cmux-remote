@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.0 — 2026-09-07
+
+- Create local workspaces with an optional name and directory from the remote.
+- Add terminal tabs beside the selected terminal using explicit pane UUIDs.
+- Initialize background terminals without focus or input and verify their text is readable.
+- Open confirmed creations in the remote while preserving previous drafts and Mac focus.
+- Keep uncertain creation results visible without replaying requests automatically.
+
 ## 0.1.0 — 2026-09-07
 
 This release develops the viewer from upstream commit
